@@ -50,6 +50,21 @@ func (b *ValidationErrors) HaveErrors() bool {
 	return false
 }
 
+func (b *ValidationErrors) Merge(other ValidationErrors) {
+	if len(other.fieldErrors) > 0 && b.fieldErrors == nil {
+		b.fieldErrors = make(map[string][]string)
+	}
+	for name, errors := range other.fieldErrors {
+		if _, ok := b.fieldErrors[name]; ok {
+			b.fieldErrors[name] = append(b.fieldErrors[name], errors...)
+		} else {
+			b.fieldErrors[name] = errors
+		}
+	}
+
+	b.globalErrors = append(b.globalErrors, other.globalErrors...)
+}
+
 func (b *ValidationErrors) Error() string {
 	return fmt.Sprintf("validation error global: %+v, fields: %+v", b.globalErrors, b.fieldErrors)
 }

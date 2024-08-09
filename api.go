@@ -2,10 +2,14 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
+	"time"
+	"unsafe"
 
 	"github.com/go-playground/form/v4"
 	"github.com/sunfmin/reflectutils"
@@ -13,8 +17,9 @@ import (
 )
 
 type PageResponse struct {
-	PageTitle string
-	Body      h.HTMLComponent
+	PageTitle   string
+	PageActions []h.HTMLComponent
+	Body        h.HTMLComponent
 }
 
 type PortalUpdate struct {
@@ -65,11 +70,115 @@ type EventFuncID struct {
 	ID string `json:"id,omitempty"`
 }
 
+type ContextValuePointer struct {
+	dot, child context.Context
+	key        any
+	value      reflect.Value
+}
+
+func (p *ContextValuePointer) Get() interface{} {
+	return p.value.Interface()
+}
+
+func (p *ContextValuePointer) Set(value interface{}) {
+	p.value.Set(reflect.ValueOf(value))
+}
+
+func (p *ContextValuePointer) With(value interface{}) func() {
+	old := p.Get()
+	p.Set(value)
+	return func() {
+		p.Set(old)
+	}
+}
+
+func (p *ContextValuePointer) Parent() context.Context {
+	parent := reflect.Indirect(reflect.ValueOf(p.dot).Elem()).FieldByName("Context")
+	if parent.IsValid() {
+		return parent.Interface().(context.Context)
+	}
+	return nil
+}
+
+func (p *ContextValuePointer) Top() (top *ContextValuePointer) {
+	parent := p.Parent()
+	top = p
+	if parent == nil {
+		return
+	}
+
+	p = getContextValuer(p.dot, parent, p.key)
+	for p != nil && parent != nil {
+		top = p
+		parent = top.Parent()
+		if parent != nil {
+			p = getContextValuer(top.dot, parent, p.key)
+		}
+	}
+	return
+}
+
+func (p *ContextValuePointer) Delete() context.Context {
+	parent := p.Parent()
+	if p.child == nil {
+		return parent
+	}
+	parentField := reflect.Indirect(reflect.ValueOf(p.child).Elem()).FieldByName("Context")
+	parentField.Set(reflect.ValueOf(parent))
+	return p.child
+}
+
+var valueCtxType = reflect.TypeOf(context.WithValue(context.Background(), "a", nil)).Elem()
+
+func getContextValuer(child, ctx context.Context, key any) *ContextValuePointer {
+	contextValues := reflect.Indirect(reflect.ValueOf(ctx))
+	contextKeys := reflect.TypeOf(ctx)
+	for contextKeys.Kind() == reflect.Ptr {
+		contextKeys = contextKeys.Elem()
+	}
+
+	if contextValues.Type() == valueCtxType {
+		keyField := contextValues.FieldByName("key")
+		keyValue := reflect.NewAt(keyField.Type(), unsafe.Pointer(keyField.UnsafeAddr())).Elem()
+		if keyValue.Interface() == key {
+			if valueField := contextValues.FieldByName("val"); valueField.IsValid() {
+				value := reflect.NewAt(valueField.Type(), unsafe.Pointer(valueField.UnsafeAddr())).Elem()
+				return &ContextValuePointer{
+					dot:   ctx,
+					child: child,
+					key:   key,
+					value: value,
+				}
+			}
+		}
+	}
+
+	if contextField := contextValues.FieldByName("Context"); contextField.IsValid() {
+		return getContextValuer(ctx, contextField.Interface().(context.Context), key)
+	}
+	return nil
+}
+
+func GetContextValuer(ctx context.Context, key any) *ContextValuePointer {
+	return getContextValuer(nil, ctx, key)
+}
+
+func WithContextValue(ctx *EventContext, key any, value interface{}) (done func()) {
+	if ptr := GetContextValuer(ctx.R.Context(), key); ptr != nil {
+		return ptr.With(value)
+	}
+	ctx.WithContextValue(key, value)
+	return func() {
+		ctx.R = ctx.R.WithContext(GetContextValuer(ctx.R.Context(), key).Top().Delete())
+	}
+}
+
 type EventContext struct {
 	R        *http.Request
 	W        http.ResponseWriter
 	Injector *PageInjector
 	Flash    interface{} // pass value from actions to index
+	i        int64
 }
 
 func (e *EventContext) WithContextValue(key any, value any) (r *EventContext) {
@@ -112,6 +221,17 @@ func (ctx *EventContext) MustUnmarshalForm(v interface{}) {
 	}
 }
 
+func (e *EventContext) UID() string {
+	return "_" + fmt.Sprint(time.Now().UnixNano())
+}
+
+type CustoFormTypeDecoder struct {
+	Decoder form.DecodeCustomTypeFunc
+	Types   []any
+}
+
+var FormTypeDecoders []CustoFormTypeDecoder
+
 func (ctx *EventContext) UnmarshalForm(v interface{}) (err error) {
 	mf := ctx.R.MultipartForm
 	if ctx.R.MultipartForm == nil {
@@ -119,6 +239,11 @@ func (ctx *EventContext) UnmarshalForm(v interface{}) (err error) {
 	}
 
 	dec := form.NewDecoder()
+
+	for _, decoder := range FormTypeDecoders {
+		dec.RegisterCustomTypeFunc(decoder.Decoder, decoder.Types...)
+	}
+
 	err = dec.Decode(v, mf.Value)
 	if err != nil {
 		// panic(err)

@@ -11,3 +11,5 @@ build: docker_build
 		-v .:/home/node/src \
 		-w /home/node/src \
 		pnpm:latest bash -c 'pnpm install && pnpm format && pnpm run build'
+
+	cp vue/* dist

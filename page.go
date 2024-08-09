@@ -98,6 +98,7 @@ func (p *PageBuilder) render(
 	if err != nil {
 		panic(err)
 	}
+
 	pager = &pr
 
 	if pager.Body == nil {

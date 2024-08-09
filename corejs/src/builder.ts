@@ -9,6 +9,7 @@ export class Builder {
   _method?: string
   _vars?: any
   _locals?: any
+  _closer?: any
   _loadPortalBody: boolean = false
   _form?: any = {}
   _popstate?: boolean
@@ -29,6 +30,26 @@ export class Builder {
       return this.ignoreErrors?.includes(err.message)
     }
     return false
+  }
+
+  runScript = (r: EventResponse) => {
+    if (r.runScript) {
+      new Function('vars', 'locals', 'form', 'closer', 'plaid', r.runScript).apply(this, [
+        this._vars,
+        this._locals,
+        this._form,
+        this._closer,
+        (): Builder => {
+          return plaid()
+            .vars(this._vars)
+            .locals(this._locals)
+            .form(this._form)
+            .closer(this._closer)
+            .updateRootTemplate(this._updateRootTemplate)
+        }
+      ])
+    }
+    return r
   }
 
   public eventFunc(id: string): Builder {
@@ -59,6 +80,11 @@ export class Builder {
 
   public vars(v: any): Builder {
     this._vars = v
+    return this
+  }
+
+  public closer(v: any): Builder {
+    this._closer = v
     return this
   }
 
@@ -196,12 +222,10 @@ export class Builder {
     }
   }
 
-  public go(): Promise<void | EventResponse> {
+  public async fetch(): Promise<EventResponse> {
     if (this._eventFuncID.id == '__reload__') {
       this._buildPushStateResult = null
     }
-
-    this.runPushState()
 
     const fetchOpts: RequestInit = {
       method: 'POST',
@@ -220,32 +244,52 @@ export class Builder {
 
     window.dispatchEvent(new Event('fetchStart'))
     const fetchURL = this.buildFetchURL()
-    return fetch(fetchURL, fetchOpts)
-      .then((r) => {
-        if (r.redirected) {
-          document.location.replace(r.url)
-          return {}
+
+    let er: EventResponse = {}
+
+    try {
+      const r = await fetch(fetchURL, fetchOpts).catch((error) => {
+        console.log(error)
+        Promise.reject(error)
+        if (!this.isIgnoreError(error)) {
+          alert('Fetch Unknown Error: ' + error)
+        }
+        // document.location.reload();
+      })
+
+      if (!r) {
+        return er
+      }
+
+      if (!r.ok) {
+        this._vars.presetsMessage = {
+          show: true,
+          message: `Server Response Error: <code>${r.status}</code> (${r.statusText}). See window console for detail.`,
+          color: 'error'
         }
 
-        return r.json()
-      })
-      .then((r: EventResponse) => {
-        if (r.runScript) {
-          new Function('vars', 'locals', 'form', 'plaid', r.runScript).apply(this, [
-            this._vars,
-            this._locals,
-            this._form,
-            (): Builder => {
-              return plaid()
-                .vars(this._vars)
-                .locals(this._locals)
-                .form(this._form)
-                .updateRootTemplate(this._updateRootTemplate)
-            }
-          ])
-        }
-        return r
-      })
+        Promise.reject(new Error(`Response status: ${r.status} ${r.statusText}`))
+        return er
+      }
+
+      if (r.redirected) {
+        document.location.replace(r.url)
+        return er
+      }
+
+      er = await r.json()
+    } finally {
+      window.dispatchEvent(new Event('fetchEnd'))
+    }
+
+    return er
+  }
+
+  public go(): Promise<EventResponse> {
+    this.runPushState()
+
+    return this.fetch()
+      .then(this.runScript)
       .then((r: EventResponse) => {
         if (r.pageTitle) {
           document.title = r.pageTitle
@@ -293,16 +337,12 @@ export class Builder {
 
         return r
       })
-      .catch((error) => {
-        console.log(error)
-        if (!this.isIgnoreError(error)) {
-          alert('Unknown Error')
-        }
-        // document.location.reload();
-      })
-      .finally(() => {
-        window.dispatchEvent(new Event('fetchEnd'))
-      })
+  }
+
+  public json(): Promise<EventResponse> {
+    return this.fetch().then((r: EventResponse) => {
+      return r.data
+    })
   }
 
   private ensurePushStateResult() {

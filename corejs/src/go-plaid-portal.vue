@@ -1,5 +1,5 @@
 <template>
-  <div class="go-plaid-portal" v-if="visible" ref="portal">
+  <div class="go-plaid-portal" :id="'portal--' + portalName" v-if="visible" ref="portal">
     <component :is="current" v-if="current">
       <slot :form="form" :locals="locals"></slot>
     </component>
@@ -68,7 +68,7 @@ const reload = () => {
 onMounted(() => {
   const pn = props.portalName
   if (pn) {
-    window.__goplaid.portals[pn] = { updatePortalTemplate, reload }
+    window.__goplaid.portals[pn] = { portalName: props.portalName, updatePortalTemplate, reload }
   }
   reload()
 })

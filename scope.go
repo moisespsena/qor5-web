@@ -21,6 +21,10 @@ func Scope(children ...h.HTMLComponent) (r *ScopeBuilder) {
 	return
 }
 
+func (b *ScopeBuilder) Tag() *h.HTMLTagBuilder {
+	return b.tag
+}
+
 func (b *ScopeBuilder) VSlot(v string) (r *ScopeBuilder) {
 	b.tag.Attr("v-slot", v)
 	return b
@@ -54,6 +58,19 @@ func (b *ScopeBuilder) Init(vs ...interface{}) (r *ScopeBuilder) {
 
 func (b *ScopeBuilder) FormInit(vs ...interface{}) (r *ScopeBuilder) {
 	b.init(":form-init", vs...)
+	return b
+}
+
+func (b *ScopeBuilder) Setup(callback string) (r *ScopeBuilder) {
+	b.init(":setup", []any{callback})
+	return b
+}
+
+func (b *ScopeBuilder) Closer(vs ...interface{}) (r *ScopeBuilder) {
+	if len(vs) == 0 {
+		vs = append(vs, "{}")
+	}
+	b.init(":closer", vs...)
 	return b
 }
 
@@ -93,6 +110,21 @@ func (b *ScopeBuilder) Observer(name string, script string) (r *ScopeBuilder) {
 func (b *ScopeBuilder) Observers(vs ...Observer) (r *ScopeBuilder) {
 	b.observers = append(b.observers, vs...)
 	return b
+}
+
+func CloserScope(comp h.HTMLComponent, show ...bool) (r *ScopeBuilder) {
+	r = Scope(
+		comp,
+	).VSlot("{closer}").
+		Closer()
+
+	for _, s := range show {
+		if s {
+			r.Setup("setTimeout(() => {closer.show = true},100)")
+		}
+	}
+
+	return
 }
 
 type notification struct {

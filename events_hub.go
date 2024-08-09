@@ -9,6 +9,11 @@ type idEventFunc struct {
 
 type EventsHub struct {
 	eventFuncs []*idEventFunc
+	wraper     func(ef EventFunc) EventFunc
+}
+
+func (p *EventsHub) Wraper(f func(ef EventFunc) EventFunc) {
+	p.wraper = f
 }
 
 func (p *EventsHub) String() string {
@@ -23,6 +28,10 @@ func (p *EventsHub) RegisterEventFunc(eventFuncId string, ef EventFunc) (key str
 	key = eventFuncId
 	if p.eventFuncById(eventFuncId) != nil {
 		return
+	}
+
+	if p.wraper != nil {
+		ef = p.wraper(ef)
 	}
 
 	p.eventFuncs = append(p.eventFuncs, &idEventFunc{eventFuncId, ef})
@@ -47,4 +56,8 @@ func (p *EventsHub) eventFuncById(id string) (r EventFunc) {
 		}
 	}
 	return
+}
+
+func (p *EventsHub) Merge(hub *EventsHub) {
+	p.eventFuncs = append(p.eventFuncs, hub.eventFuncs...)
 }

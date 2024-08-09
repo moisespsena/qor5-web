@@ -69,13 +69,13 @@ func NoopLayoutFunc(in PageFunc) PageFunc {
 
 func defaultLayoutFunc(in PageFunc) PageFunc {
 	return func(ctx *EventContext) (r PageResponse, err error) {
-		r, err = in(ctx)
-		if r.PageTitle != "" {
+		if r, err = in(ctx); err != nil {
+			r.Body = h.Div(h.Text(err.Error()))
+			err = nil
+		} else if r.PageTitle != "" {
 			ctx.Injector.Title(r.PageTitle)
 		}
-		if err != nil {
-			panic(err)
-		}
+
 		r.Body = h.HTMLComponents{
 			h.RawHTML("<!DOCTYPE html>\n"),
 			h.Tag("html").Children(

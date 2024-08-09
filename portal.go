@@ -48,6 +48,11 @@ func (b *PortalBuilder) AutoReloadInterval(v interface{}) (r *PortalBuilder) {
 	return b
 }
 
+func (b *PortalBuilder) Style(v string) (r *PortalBuilder) {
+	b.tag.Style(v)
+	return b
+}
+
 func (b *PortalBuilder) Children(comps ...h.HTMLComponent) (r *PortalBuilder) {
 	b.tag.Children(comps...)
 	return b
