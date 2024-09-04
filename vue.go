@@ -6,9 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"reflect"
+	"regexp"
 	"strings"
-	"unsafe"
 
 	h "github.com/theplant/htmlgo"
 )
@@ -39,6 +38,12 @@ func (j JsCall) MarshalJSON() ([]byte, error) {
 }
 
 type Var string
+
+type RawVar string
+
+func (v RawVar) MarshalJSON() ([]byte, error) {
+	return []byte(v), nil
+}
 
 type VueEventTagBuilder struct {
 	beforeScript string
@@ -378,6 +383,13 @@ func VField(name string, value interface{}) []interface{} {
 	}, VAssign("form", objValue)...)
 }
 
+func VModel(name string) []interface{} {
+	return append([]interface{}{
+		"v-model",
+		name,
+	})
+}
+
 func GlobalEvents() *h.HTMLTagBuilder {
 	return h.Tag("global-events")
 }
@@ -386,25 +398,9 @@ func RunScript(s string) *h.HTMLTagBuilder {
 	return h.Tag("go-plaid-run-script").Attr(":script", s)
 }
 
-func TagBuilderChildren(t *h.HTMLTagBuilder) *[]h.HTMLComponent {
-	rf := reflect.ValueOf(t).Elem().FieldByName("children")
-	rfv := reflect.NewAt(rf.Type(), unsafe.Pointer(rf.UnsafeAddr()))
-	v := rfv.Interface().(*[]h.HTMLComponent)
-	return v
-}
+var objectScriptRe = regexp.MustCompile(`":(\w+)"(\s*):(\s*)"(\w+)"(?ms)`)
 
-func FirstValidComponent(c h.HTMLComponent) h.HTMLComponent {
-	switch t := c.(type) {
-	case h.HTMLComponents:
-		for _, comp := range t {
-			if comp != nil {
-				return FirstValidComponent(comp)
-			}
-		}
-	case *ScopeBuilder:
-		return FirstValidComponent(h.HTMLComponents(*TagBuilderChildren(t.tag)))
-	case *h.HTMLTagBuilder:
-		return FirstValidComponent(h.HTMLComponents(*TagBuilderChildren(t)))
-	}
-	return c
+func EvaluatedJSONObject(s string) string {
+	s = objectScriptRe.ReplaceAllString(s, `"$1"$2:$3$4`)
+	return s
 }

@@ -40,6 +40,14 @@ type EventResponse struct {
 	RunScript     string           `json:"runScript,omitempty"` // used with InitContextVars to set values for example vars.show to used by v-model
 }
 
+func (r *EventResponse) UpdatePortal(name string, body h.HTMLComponent) *EventResponse {
+	r.UpdatePortals = append(r.UpdatePortals, &PortalUpdate{
+		Name: name,
+		Body: body,
+	})
+	return r
+}
+
 // @snippet_end
 
 // @snippet_begin(PageFuncAndEventFuncDefinition)

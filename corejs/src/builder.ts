@@ -1,5 +1,5 @@
-import type { EventFuncID, EventResponse, Location, Queries, QueryValue } from './types'
-import { buildPushState, objectToFormData, setFormValue } from '@/utils'
+import type {EventFuncID, EventResponse, Location, Queries, QueryValue} from './types'
+import {buildPushState, objectToFormData} from '@/utils'
 
 declare let window: any
 
@@ -310,9 +310,13 @@ export class Builder {
 
         if (r.updatePortals && r.updatePortals.length > 0) {
           for (const pu of r.updatePortals) {
-            const { updatePortalTemplate } = window.__goplaid.portals[pu.name]
-            if (updatePortalTemplate) {
-              updatePortalTemplate(pu.body)
+            if (window.__goplaid.portals[pu.name]) {
+              const { updatePortalTemplate } = window.__goplaid.portals[pu.name]
+              if (updatePortalTemplate) {
+                updatePortalTemplate(pu.body)
+              }
+            } else {
+              console.error("go-plaid-portal '" + pu.name + "' does not exists.")
             }
           }
         }
