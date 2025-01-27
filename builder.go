@@ -36,6 +36,15 @@ func (p *Builder) EventFuncs(vs ...interface{}) (r *Builder) {
 
 type ComponentsPack string
 
+func ComponentsPackFromBytes(b []byte, e ...error) (p ComponentsPack) {
+	for _, err := range e {
+		if err != nil {
+			panic(err)
+		}
+	}
+	return ComponentsPack(b)
+}
+
 var startTime = time.Now()
 
 func PacksHandler(contentType string, packs ...ComponentsPack) http.Handler {
@@ -76,6 +85,11 @@ func defaultLayoutFunc(in PageFunc) PageFunc {
 			ctx.Injector.Title(r.PageTitle)
 		}
 
+		//var body []byte
+		//if body, err = r.Body.MarshalHTML(WrapEventContext(ctx.Context(), ctx)); err != nil {
+		//	return
+		//}
+
 		r.Body = h.HTMLComponents{
 			h.RawHTML("<!DOCTYPE html>\n"),
 			h.Tag("html").Children(
@@ -84,7 +98,11 @@ func defaultLayoutFunc(in PageFunc) PageFunc {
 				),
 				h.Body(
 					h.Div(
-						r.Body,
+						// NOTES:
+						// 1. put body on portal, because vue uses #app.innerHTML for build app template.
+						// innerHTML replaces attributes names to kebab-case, bugging non kebab-case slots names.
+						// 2. The main portal is anonymous to prevent cache.
+						Portal(r.Body), //.Raw(true).Content(string(body)),
 					).Id("app").Attr("v-cloak", true),
 					ctx.Injector.GetTailHTMLComponent(),
 				).Class("front"),

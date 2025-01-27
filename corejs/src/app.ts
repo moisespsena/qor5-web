@@ -1,19 +1,20 @@
 import {
   type App,
-  type DefineComponent,
   createApp,
+  type DefineComponent,
   defineComponent,
   onMounted,
-  shallowRef,
   provide,
   reactive,
-  ref
+  ref,
+  shallowRef
 } from 'vue'
 import { GlobalEvents } from 'vue-global-events'
 import GoPlaidScope from '@/go-plaid-scope.vue'
 import GoPlaidPortal from '@/go-plaid-portal.vue'
 import GoPlaidRunScript from '@/go-plaid-run-script.vue'
-import { componentByTemplate } from '@/utils'
+import UserComponent from '@/user-component.vue'
+import { componentByTemplate } from '@/component-by-template'
 import { Builder, plaid } from '@/builder'
 import { keepScroll } from '@/keepScroll'
 import { assignOnMounted } from '@/assign'
@@ -26,25 +27,37 @@ export const Root = defineComponent({
     }
   },
 
-  setup(props, { emit }) {
+  setup(props, { emit, attrs, expose }) {
     const current = shallowRef<DefineComponent | null>(null)
     const form = reactive({})
     provide('form', form)
-    const updateRootTemplate = (template: string) => {
-      current.value = componentByTemplate(template, form)
-    }
 
-    provide('updateRootTemplate', updateRootTemplate)
+    const locals = reactive({})
+    provide('locals', locals)
+
+    const closer = reactive({})
+    provide('closer', closer)
+
+    const fullscreen = reactive({})
+    provide('fullscreen', locals)
+
     const vars = reactive({
       __notification: {}
     })
+    provide('vars', vars)
+
     const _plaid = (): Builder => {
       return plaid().updateRootTemplate(updateRootTemplate).vars(vars)
     }
     provide('plaid', _plaid)
-    provide('vars', vars)
+
     const isFetching = ref(false)
     provide('isFetching', isFetching)
+
+    const updateRootTemplate = (template: string) => {
+      current.value = componentByTemplate(template, form, locals)
+    }
+    provide('updateRootTemplate', updateRootTemplate)
 
     onMounted(() => {
       updateRootTemplate(props.initialTemplate)
@@ -78,6 +91,7 @@ export const plaidPlugin = {
     app.component('GoPlaidScope', GoPlaidScope)
     app.component('GoPlaidPortal', GoPlaidPortal)
     app.component('GoPlaidRunScript', GoPlaidRunScript)
+    app.component('UserComponent', UserComponent)
     app.directive('keep-scroll', keepScroll)
     app.directive('assign', assignOnMounted)
     app.component('GlobalEvents', GlobalEvents)
@@ -86,6 +100,19 @@ export const plaidPlugin = {
 
 export function createWebApp(template: string): App<Element> {
   const app = createApp(Root, { initialTemplate: template })
+
+  const copiedToClipboard = ref(false)
+  const copyToClipboard = (text: string) => {
+    window.navigator.clipboard.writeText(text)
+    copiedToClipboard.value = true
+    window.setTimeout(() => {
+      copiedToClipboard.value = false
+    }, 1000)
+  }
+
+  app.config.globalProperties.copyToClipboard = copyToClipboard
+  app.config.globalProperties.copiedToClipboard = copiedToClipboard
+
   app.use(plaidPlugin)
   return app
 }

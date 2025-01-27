@@ -127,7 +127,7 @@ func portalUpdate0AssertFunc(t *testing.T, er *TestEventResponse, debug bool, ca
 	contains bool,
 ) {
 	if len(er.UpdatePortals) == 0 {
-		t.Errorf("No UpdatePortals in : %#+v", er)
+		t.Errorf("No updatePortals in : %#+v", er)
 		return
 	}
 	if debug {

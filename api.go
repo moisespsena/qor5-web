@@ -23,8 +23,9 @@ type PageResponse struct {
 }
 
 type PortalUpdate struct {
-	Name string          `json:"name,omitempty"`
-	Body h.HTMLComponent `json:"body,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Body  h.HTMLComponent `json:"body,omitempty"`
+	Defer bool            `json:"defer,omitempty"`
 }
 
 // @snippet_begin(EventResponseDefinition)
@@ -36,15 +37,32 @@ type EventResponse struct {
 	RedirectURL   string           `json:"redirectURL,omitempty"` // change window url without push state
 	ReloadPortals []string         `json:"reloadPortals,omitempty"`
 	UpdatePortals []*PortalUpdate  `json:"updatePortals,omitempty"`
-	Data          interface{}      `json:"data,omitempty"`      // used for return collection data like TagsInput data source
-	RunScript     string           `json:"runScript,omitempty"` // used with InitContextVars to set values for example vars.show to used by v-model
+	Data          interface{}      `json:"data,omitempty"` // used for return collection data like TagsInput data source
+	RunScript     string           `json:"runScript,omitempty"`
+	// used with InitContextVars to set values for example vars.show to used by v-model
+
+	deferedPortals map[string]bool
 }
 
 func (r *EventResponse) UpdatePortal(name string, body h.HTMLComponent) *EventResponse {
+	for _, p := range r.UpdatePortals {
+		if p.Name == name {
+			panic("Duplicate Portal '" + name + "' Update")
+		}
+	}
 	r.UpdatePortals = append(r.UpdatePortals, &PortalUpdate{
-		Name: name,
-		Body: body,
+		Name:  name,
+		Body:  body,
+		Defer: r.deferedPortals[name],
 	})
+	return r
+}
+
+func (r *EventResponse) DeferedPortal(name string) *EventResponse {
+	if r.deferedPortals == nil {
+		r.deferedPortals = make(map[string]bool)
+	}
+	r.deferedPortals[name] = true
 	return r
 }
 
@@ -52,17 +70,24 @@ func (r *EventResponse) UpdatePortal(name string, body h.HTMLComponent) *EventRe
 
 // @snippet_begin(PageFuncAndEventFuncDefinition)
 type (
-	PageFunc  func(ctx *EventContext) (r PageResponse, err error)
+	PageFunc     func(ctx *EventContext) (r PageResponse, err error)
+	EventHandler interface {
+		Handle(ctx *EventContext) (r EventResponse, err error)
+	}
 	EventFunc func(ctx *EventContext) (r EventResponse, err error)
 )
+
+func (f EventFunc) Handle(ctx *EventContext) (r EventResponse, err error) {
+	return f(ctx)
+}
 
 // @snippet_end
 
 type LayoutFunc func(in PageFunc) PageFunc
 
-// @snippet_begin(EventFuncHubDefinition)
-type EventFuncHub interface {
-	RegisterEventFunc(eventFuncId string, ef EventFunc) (key string)
+// @snippet_begin(EventHandlerHubDefinition)
+type EventHandlerHub interface {
+	RegisterEventHandler(eventFuncId string, ef EventHandler) (key string)
 }
 
 // @snippet_end
@@ -181,6 +206,30 @@ func WithContextValue(ctx *EventContext, key any, value interface{}) (done func(
 	}
 }
 
+func GetContexValue(key any, ctx ...context.Context) (value any) {
+	for _, ctx := range ctx {
+		if ctx != nil {
+			if value = ctx.Value(key); value != nil {
+				return
+			}
+		}
+	}
+	return
+}
+
+type ContextValuer interface {
+	WithContextValue(key any, value any)
+	ContextValue(key any) any
+	Context() context.Context
+}
+
+type RequestContext interface {
+	ContextValuer
+	Request() *http.Request
+	ResponseWriter() http.ResponseWriter
+	Param(key string) (r string)
+}
+
 type EventContext struct {
 	R        *http.Request
 	W        http.ResponseWriter
@@ -189,13 +238,24 @@ type EventContext struct {
 	i        int64
 }
 
-func (e *EventContext) WithContextValue(key any, value any) (r *EventContext) {
+func (e *EventContext) WithContextValue(key any, value any) {
 	e.R = e.R.WithContext(context.WithValue(e.R.Context(), key, value))
-	return e
 }
 
 func (e *EventContext) ContextValue(key any) any {
 	return e.R.Context().Value(key)
+}
+
+func (e *EventContext) Context() context.Context {
+	return e.R.Context()
+}
+
+func (e *EventContext) Request() *http.Request {
+	return e.R
+}
+
+func (e *EventContext) ResponseWriter() http.ResponseWriter {
+	return e.W
 }
 
 func (e *EventContext) Param(key string) (r string) {
@@ -260,7 +320,18 @@ func (ctx *EventContext) UnmarshalForm(v interface{}) (err error) {
 
 	if len(mf.File) > 0 {
 		for k, vs := range mf.File {
-			_ = reflectutils.Set(v, k, vs)
+			// set slice
+			if err2 := reflectutils.Set(v, k, vs); err2 != nil &&
+				err2.Error() == "reflect.Set: value of type []*multipart.FileHeader is not "+
+					"assignable to type multipart.FileHeader" {
+				if len(vs) == 0 {
+					// set to nil
+					reflectutils.Set(v, k, nil)
+				} else {
+					// set first value
+					reflectutils.Set(v, k, vs[0])
+				}
+			}
 		}
 	}
 	return

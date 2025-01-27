@@ -1,18 +1,20 @@
 package web
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type idEventFunc struct {
 	id string
-	ef EventFunc
+	ef EventHandler
 }
 
 type EventsHub struct {
 	eventFuncs []*idEventFunc
-	wraper     func(ef EventFunc) EventFunc
+	wraper     func(ef EventHandler) EventHandler
 }
 
-func (p *EventsHub) Wraper(f func(ef EventFunc) EventFunc) {
+func (p *EventsHub) Wraper(f func(ef EventHandler) EventHandler) {
 	p.wraper = f
 }
 
@@ -24,9 +26,9 @@ func (p *EventsHub) String() string {
 	return fmt.Sprintf("%#+v", rs)
 }
 
-func (p *EventsHub) RegisterEventFunc(eventFuncId string, ef EventFunc) (key string) {
+func (p *EventsHub) RegisterEventHandler(eventFuncId string, ef EventHandler) (key string) {
 	key = eventFuncId
-	if p.eventFuncById(eventFuncId) != nil {
+	if p.eventHandleById(eventFuncId) != nil {
 		return
 	}
 
@@ -38,17 +40,21 @@ func (p *EventsHub) RegisterEventFunc(eventFuncId string, ef EventFunc) (key str
 	return
 }
 
+func (p *EventsHub) RegisterEventFunc(eventFuncId string, ef EventFunc) (key string) {
+	return p.RegisterEventHandler(eventFuncId, ef)
+}
+
 func (p *EventsHub) addMultipleEventFuncs(vs ...interface{}) (key string) {
 	if len(vs)%2 != 0 {
 		panic("id and func not paired")
 	}
 	for i := 0; i < len(vs); i = i + 2 {
-		p.RegisterEventFunc(vs[i].(string), vs[i+1].(func(ctx *EventContext) (r EventResponse, err error)))
+		p.RegisterEventHandler(vs[i].(string), EventFunc(vs[i+1].(func(ctx *EventContext) (r EventResponse, err error))))
 	}
 	return
 }
 
-func (p *EventsHub) eventFuncById(id string) (r EventFunc) {
+func (p *EventsHub) eventHandleById(id string) (r EventHandler) {
 	for _, ne := range p.eventFuncs {
 		if ne.id == id {
 			r = ne.ef

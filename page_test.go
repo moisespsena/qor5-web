@@ -317,7 +317,7 @@ func TestMultiplePagesAndEvents(t *testing.T) {
 	}
 
 	pb := New()
-	pb.RegisterEventFunc("bookmark", bookmark)
+	pb.RegisterEventHandler("bookmark", bookmark)
 
 	mux := goji.NewMux()
 	mux.Handle(pat.New("/home/topics/:topicID"), pb.Page(topicDetail))

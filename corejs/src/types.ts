@@ -27,6 +27,7 @@ export interface EventFuncID {
 export interface PortalUpdate {
   name: string
   body: string
+  defer?: boolean
   afterLoaded?: string
 }
 

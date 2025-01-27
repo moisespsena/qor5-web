@@ -19,7 +19,7 @@ func Page(pf PageFunc, efs ...interface{}) (p *PageBuilder) {
 		b: Default,
 	}
 	p.pageRenderFunc = pf
-	p.RegisterEventFunc("__reload__", reload)
+	p.RegisterEventHandler("__reload__", EventFunc(reload))
 	p.EventFuncs(efs...)
 	return
 }
@@ -64,7 +64,7 @@ func (p *PageBuilder) EventFuncs(vs ...interface{}) (r *PageBuilder) {
 }
 
 func (p *PageBuilder) EventFunc(name string, ef EventFunc) (r *PageBuilder) {
-	p.RegisterEventFunc(name, ef)
+	p.RegisterEventHandler(name, ef)
 	return p
 }
 
@@ -161,15 +161,15 @@ func (p *PageBuilder) executeEvent(w http.ResponseWriter, r *http.Request) {
 	// but user keep clicking page without refresh page to call p.render to fill up eventFuncs
 	// because default added reload
 	if len(p.eventFuncs) <= 1 &&
-		p.eventFuncById(eventFuncID) == nil &&
-		p.b.eventFuncById(eventFuncID) == nil {
+		p.eventHandleById(eventFuncID) == nil &&
+		p.b.eventHandleById(eventFuncID) == nil {
 		log.Println("Re-render because event funcs gone, might server restarted")
 		p.render(w, r, c, &PageInjector{}, true)
 	}
 
-	ef := p.eventFuncById(eventFuncID)
+	ef := p.eventHandleById(eventFuncID)
 	if ef == nil {
-		ef = p.b.eventFuncById(eventFuncID)
+		ef = p.b.eventHandleById(eventFuncID)
 	}
 
 	if ef == nil {
@@ -178,7 +178,7 @@ func (p *PageBuilder) executeEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	er, err := ef(ctx)
+	er, err := ef.Handle(ctx)
 	if err != nil {
 		panic(err)
 	}

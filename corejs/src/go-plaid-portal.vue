@@ -1,64 +1,122 @@
 <template>
-  <div class="go-plaid-portal" :id="'portal--' + portalName" v-if="visible" ref="portal">
+  <template v-if="raw">
     <component :is="current" v-if="current">
       <slot :form="form" :locals="locals"></slot>
     </component>
-  </div>
+  </template>
+  <template v-else>
+    <div
+      class="go-plaid-portal"
+      :id="portalName && 'portal--' + portalName"
+      v-if="visible"
+      ref="portal"
+    >
+      <component :is="current" v-if="current">
+        <slot :form="form" :locals="locals"></slot>
+      </component>
+    </div>
+  </template>
 </template>
 
 <script setup lang="ts">
 import {
   type DefineComponent,
-  onBeforeMount,
+  inject,
+  isProxy,
   onBeforeUnmount,
   onMounted,
   onUpdated,
+  provide,
+  reactive,
   ref,
   shallowRef,
   useSlots
 } from 'vue'
-import { componentByTemplate } from '@/utils'
+import { componentByTemplate } from '@/component-by-template'
 import type { EventResponse } from '@/types'
+import type { Builder } from '@/builder'
+
 declare let window: any
 window.__goplaid = window.__goplaid ?? {}
 window.__goplaid.portals = window.__goplaid.portals ?? {}
 
 const portal = ref()
 
-const props = defineProps({
-  loader: Object,
-  locals: Object,
-  form: Object,
-  visible: Boolean,
-  afterLoaded: Function,
-  portalName: String,
-  autoReloadInterval: [String, Number]
-})
+const props = defineProps<{
+  loader: Builder | undefined
+  content: string
+  visible: boolean
+  afterLoaded: () => null
+  portalName: string
+  form: object | undefined
+  locals: object | undefined
+  methods: object | undefined
+  data: object | undefined
+  autoReloadInterval: string | number
+  raw: boolean
+}>()
 
 const current = shallowRef<DefineComponent | null>(null)
 const autoReloadIntervalID = ref<number>(0)
 
-const updatePortalTemplate = (template: string) => {
-  current.value = componentByTemplate(template, props.form, props.locals, portal)
-}
 const slots = useSlots()
+
+let locals = inject<object>('locals', {})
+
+if (props.locals !== undefined) {
+  if (!isProxy(props.locals)) {
+    locals = reactive({ $parent: locals, ...props.locals })
+  }
+}
+provide('locals', locals)
+
+let form = inject<object>('form', {})
+
+if (props.form !== undefined) {
+  if (!isProxy(props.form)) {
+    form = reactive({ $parent: form, ...props.form })
+  }
+}
+provide('form', form)
+
+const dot = reactive({
+  $parent: inject('$portal', null),
+  name: props.portalName,
+  form: form,
+  locals: locals,
+  value: portal
+})
+
+provide('$portal', dot)
+
+const updatePortalTemplate = (template: string) => {
+  current.value = componentByTemplate(template, form, locals, portal)
+}
 
 // other reactive properties and methods
 const reload = () => {
   if (slots.default) {
     current.value = componentByTemplate(
       '<slot :form="form" :locals="locals"></slot>',
-      props.locals,
+      form,
+      locals,
       portal
     )
     return
   }
+
+  const content = props.content
+  if (content) {
+    updatePortalTemplate(content)
+    return
+  }
+
   const ef = props.loader
   if (!ef) {
     return
   }
   ef.loadPortalBody(true)
-    .form(props.form)
+    .form(form)
     .go()
     .then((r: EventResponse) => {
       updatePortalTemplate(r.body)
@@ -68,7 +126,11 @@ const reload = () => {
 onMounted(() => {
   const pn = props.portalName
   if (pn) {
-    window.__goplaid.portals[pn] = { portalName: props.portalName, updatePortalTemplate, reload }
+    window.__goplaid.portals[pn] = {
+      portalName: props.portalName,
+      updatePortalTemplate,
+      reload
+    }
   }
   reload()
 })
@@ -96,6 +158,9 @@ onUpdated(() => {
 })
 
 onBeforeUnmount(() => {
+  if (props.portalName) {
+    delete window.__goplaid.portals[props.portalName]
+  }
   if (autoReloadIntervalID.value && autoReloadIntervalID.value > 0) {
     clearInterval(autoReloadIntervalID.value)
   }

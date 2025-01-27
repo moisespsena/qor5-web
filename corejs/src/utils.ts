@@ -2,8 +2,7 @@ import 'formdata-polyfill'
 import querystring from 'query-string'
 import union from 'lodash/union'
 import without from 'lodash/without'
-import type {EventFuncID, ValueOp} from './types'
-import {computed, type DefineComponent, defineComponent, inject, ref, type Ref} from 'vue'
+import type { EventFuncID, ValueOp } from './types'
 
 export function buildPushState(eventFuncId: EventFuncID, url: string): any {
   const loc = eventFuncId.location
@@ -53,6 +52,12 @@ export function buildPushState(eventFuncId: EventFuncID, url: string): any {
   }
 
   const requestQuery = { ...resultQuery, ...{ __execute_event__: eventFuncId.id } }
+
+  for (const [key, value] of Object.entries(requestQuery)) {
+    if (value === null || value === undefined || value === '') {
+      delete requestQuery[key]
+    }
+  }
 
   addressBarQuery = querystring.stringify(resultQuery, { arrayFormat: 'comma' })
   if (addressBarQuery.length > 0) {
@@ -187,112 +192,6 @@ function formSet(form: FormData, fieldName: string, val: string): boolean {
   return true
 }
 
-export function componentByTemplate(
-  template: string,
-  form: any,
-  locals: any = {},
-  portal: Ref = ref()
-): DefineComponent {
-  const loadScripts = (name: string, dest: string[]) => {
-      template = template.replace(
-        new RegExp('(<script component-mode="' + name + '">(.*?)</script>)', 'gms'),
-        (m: string, p1, p2) => {
-          dest.push(p2)
-          return ''
-        }
-      )
-    },
-    callFn = (body: string, dot: object) => {
-      let fn: Function
-      try {
-        fn = new Function(body)
-      } catch (e) {
-        console.error(e, body)
-        return
-      }
-      fn.call(dot)
-    }
-
-  let setupScripts: string[] = [],
-    dataScripts: string[] = [],
-    methodsScripts: string[] = [],
-    computedScripts: string[] = [],
-    methods = {}
-
-  loadScripts('setup', setupScripts)
-  loadScripts('data', dataScripts)
-  loadScripts('methods', methodsScripts)
-  loadScripts('computed', computedScripts)
-
-  const setupScriptsBody = setupScripts.join('\n')
-  eval(
-    setupScriptsBody.length
-      ? 'try {\n' +
-          setupScriptsBody +
-          "\n} catch(e) {console.error('setup-script', setupScriptsBody, e); throw(e);}"
-      : 'null'
-  )
-
-  methodsScripts.forEach((body) => callFn(body, methods))
-
-  return defineComponent({
-    setup() {
-      let context = {
-        plaid: inject('plaid'),
-        vars: inject('vars'),
-        closer: inject('closer'),
-        isFetching: inject('isFetching'),
-        updateRootTemplate: inject('updateRootTemplate'),
-        form: form,
-        locals: locals
-      }
-
-      const callFn = (body: string) => {
-        let fn: Function
-        try {
-          fn = new Function(
-            'plaid',
-            'vars',
-            'closer',
-            'updateRootTemplate',
-            'form',
-            'locals',
-            'computed',
-            body
-          )
-        } catch (e) {
-          alert(body)
-          console.error(e, body)
-          return
-        }
-        fn.apply(context, [
-          context.plaid,
-          context.vars,
-          context.closer,
-          context.updateRootTemplate,
-          context.form,
-          context.locals,
-          computed
-        ])
-      }
-
-      dataScripts.forEach((body) => callFn(body))
-      computedScripts.forEach((body) => callFn(body))
-
-      return context
-    },
-    methods: methods,
-    mounted() {
-      this.$nextTick(() => /**/ {
-        if (this.$el && this.$el.style && this.$el.style.height) {
-          portal.value.style.height = this.$el.style.height
-        }
-      })
-    },
-    template
-  })
-}
-
 export function registerEvent(el: any, event: string, listener: any, options: any) {
   el.addEventListener(event, listener, options)
   return () => el.removeEventListener(event, listener, options)
@@ -310,6 +209,10 @@ export function objectToFormData(obj: any, form: FormData, parentKey = '') {
     }
   }
   Object.keys(obj).forEach((key) => {
+    if (key === '$parent') {
+      return
+    }
+
     const value = obj[key]
     // Construct the form key
     const formKey = parentKey ? (isArr ? `${parentKey}[${key}]` : `${parentKey}.${key}`) : key

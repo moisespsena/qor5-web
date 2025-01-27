@@ -7,19 +7,31 @@ import (
 )
 
 type PortalBuilder struct {
-	tag *h.HTMLTagBuilder
+	tag    *h.HTMLTagBuilder
+	form   string
+	locals string
 }
 
 func Portal(children ...h.HTMLComponent) (r *PortalBuilder) {
 	r = &PortalBuilder{
 		tag: h.Tag("go-plaid-portal").Children(children...),
 	}
-	r.Visible("true").Form("form").Locals()
+	r.Visible("true")
 	return
+}
+
+func (b *PortalBuilder) Raw(v bool) (r *PortalBuilder) {
+	b.tag.SetAttr("raw", v)
+	return b
 }
 
 func (b *PortalBuilder) Loader(v *VueEventTagBuilder) (r *PortalBuilder) {
 	b.tag.SetAttr(":loader", v.String())
+	return b
+}
+
+func (b *PortalBuilder) Content(v string) (r *PortalBuilder) {
+	b.tag.SetAttr(":content", h.JSONString(v))
 	return b
 }
 
@@ -34,12 +46,7 @@ func (b *PortalBuilder) Name(v string) (r *PortalBuilder) {
 }
 
 func (b *PortalBuilder) Form(v string) (r *PortalBuilder) {
-	b.tag.Attr(":form", v)
-	return b
-}
-
-func (b *PortalBuilder) Locals() (r *PortalBuilder) {
-	b.tag.Attr(":locals", "locals")
+	b.form = v
 	return b
 }
 
@@ -69,5 +76,13 @@ func (b *PortalBuilder) ParentForceUpdateAfterLoaded() (r *PortalBuilder) {
 }
 
 func (b *PortalBuilder) MarshalHTML(ctx context.Context) (r []byte, err error) {
+	if b.form == "" {
+		b.form = "form"
+	}
+	if b.locals == "" {
+		b.locals = "locals"
+	}
+	b.tag.Attr(":form", b.form)
+	b.tag.Attr(":locals", b.locals)
 	return b.tag.MarshalHTML(ctx)
 }

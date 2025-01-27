@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { isProxy, isReactive, isRef, onMounted, ref } from 'vue'
 
 const props = defineProps({
   script: {
@@ -9,7 +9,7 @@ const props = defineProps({
 })
 
 onMounted(() => {
-  props.script()
+  props.script({ isProxy, isReactive, isRef, ref })
 })
 </script>
 

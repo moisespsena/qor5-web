@@ -10,6 +10,17 @@ build: docker_build
 		-v $(HOME)/.cache/pnpm:/home/node/.cache/pnpm \
 		-v .:/home/node/src \
 		-w /home/node/src \
+		pnpm:latest bash -c 'pnpm install && pnpm run build'
+
+	cp vue/* dist
+
+build-format: docker_build
+	$(DOCKER_CMD) run -it --rm \
+		--user $(shell id -u):$(shell id -g) \
+		-e HOME=/home/node \
+		-v $(HOME)/.cache/pnpm:/home/node/.cache/pnpm \
+		-v .:/home/node/src \
+		-w /home/node/src \
 		pnpm:latest bash -c 'pnpm install && pnpm format && pnpm run build'
 
 	cp vue/* dist

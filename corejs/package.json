@@ -14,10 +14,19 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.2",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-sql": "^6.8.0",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "codemirror": "^6.0.1",
+    "domhandler": "^5.0.3",
     "formdata-polyfill": "^4.0.10",
     "lodash": "^4.17.21",
     "query-string": "^9.0.0",
     "vue": "^3.4.27",
+    "vue-codemirror": "^6.1.1",
     "vue-global-events": "^3.0.1",
     "whatwg-fetch": "^3.6.20"
   },

@@ -2,6 +2,19 @@ package datafield
 
 type Data map[any]any
 
+func (d Data) Clone() Data {
+	if d == nil {
+		return nil
+	}
+
+	newData := make(Data, len(d))
+	for k, v := range d {
+		newData[k] = v
+	}
+
+	return newData
+}
+
 type (
 	DataFielder[T any] interface {
 		GetDataField() *DataField[T]
@@ -56,4 +69,11 @@ func (d *DataField[T]) SetData(key, value any) T {
 	}
 	d.data[key] = value
 	return d.dot
+}
+
+func (d DataField[T]) Clone() DataField[T] {
+	if d.data != nil {
+		d.data = d.data.Clone()
+	}
+	return d
 }

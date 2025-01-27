@@ -4,20 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/qor5/web/v3/tag"
 	h "github.com/theplant/htmlgo"
 )
 
 type SlotBuilder struct {
-	tag   *h.HTMLTagBuilder
+	tag.TagBuilder[*SlotBuilder]
 	scope string
 	name  string
 }
 
 func Slot(children ...h.HTMLComponent) (r *SlotBuilder) {
-	r = &SlotBuilder{
-		tag: h.Tag("template").Children(children...),
-	}
-	return
+	return tag.NewTag(&SlotBuilder{}, "template", children...)
 }
 
 func (b *SlotBuilder) Scope(v string) (r *SlotBuilder) {
@@ -30,11 +28,6 @@ func (b *SlotBuilder) Name(v string) (r *SlotBuilder) {
 	return b
 }
 
-func (b *SlotBuilder) Children(comps ...h.HTMLComponent) (r *SlotBuilder) {
-	b.tag.Children(comps...)
-	return b
-}
-
 func (b *SlotBuilder) MarshalHTML(ctx context.Context) (r []byte, err error) {
 	if len(b.name) == 0 {
 		panic("Slot(...).Name(name) required")
@@ -42,9 +35,9 @@ func (b *SlotBuilder) MarshalHTML(ctx context.Context) (r []byte, err error) {
 
 	attrName := fmt.Sprintf("v-slot:%s", b.name)
 	if len(b.scope) == 0 {
-		b.tag.Attr(attrName, true)
+		b.Attr(attrName, true)
 	} else {
-		b.tag.Attr(attrName, b.scope)
+		b.Attr(attrName, b.scope)
 	}
-	return b.tag.MarshalHTML(ctx)
+	return b.TagBuilder.MarshalHTML(ctx)
 }

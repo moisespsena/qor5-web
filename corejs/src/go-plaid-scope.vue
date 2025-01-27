@@ -6,18 +6,21 @@
     :vars="vars"
     :closer="closer"
     :setup="setup"
+    :fullscreen="fullscreen"
   ></slot>
 </template>
 
 <script setup lang="ts">
-import { inject, onMounted, provide, reactive, watch } from 'vue'
+import { inject, isProxy, onMounted, provide, reactive, watch } from 'vue'
 import debounce from 'lodash/debounce'
 
 const props = defineProps<{
-  init?: object | any[]
-  closer?: object | undefined
-  formInit?: object | any[]
-  setup?: object | any[]
+  scopeName?: string
+  locals?: undefined | object | any[]
+  form?: undefined | object | any[]
+  closer?: undefined | object | any[]
+  fullscreen?: undefined | object | any[]
+  setup?: undefined | object | any[]
   useDebounce?: number
   observers?: { name: string; script: string }[]
 }>()
@@ -26,50 +29,84 @@ const emit = defineEmits<{
   (e: 'change-debounced', obj: object): void
 }>()
 
-let initObj = props.init
+let locals = inject<object>('locals', {})
 
-if (Array.isArray(initObj)) {
-  initObj = Object.assign({}, ...initObj)
+if (props.locals !== undefined) {
+  let dot: object = { $parent: locals }
+  if (isProxy(props.locals)) {
+    dot = props.locals
+  } else if (Array.isArray(props.locals)) {
+    dot = reactive(Object.assign(dot, ...props.locals))
+  } else {
+    dot = reactive({ ...dot, ...props.locals })
+  }
+  locals = dot
+  provide('locals', locals)
 }
-const locals = reactive({ ...initObj })
 
-let initForm = props.formInit
-if (Array.isArray(initForm)) {
-  initForm = Object.assign({}, ...initForm)
+let form = inject<object>('form' || {})
+
+if (props.form !== undefined) {
+  let dot: object = { $parent: form }
+  if (isProxy(props.form)) {
+    dot = props.form
+  } else if (Array.isArray(props.form)) {
+    dot = reactive(Object.assign(dot, ...props.form))
+  } else {
+    dot = reactive({ ...dot, ...props.form })
+  }
+  form = dot
+  provide('form', form)
 }
 
-const form = reactive({ ...initForm })
+let closer = inject<object>('closer', {})
+
+if (props.closer !== undefined) {
+  let dot: object = { $parent: closer, show: false }
+  if (isProxy(props.closer)) {
+    dot = props.closer
+  } else if (Array.isArray(props.closer)) {
+    dot = reactive(Object.assign(dot, ...props.closer))
+  } else {
+    dot = reactive({ ...dot, ...props.closer })
+  }
+  closer = dot
+  provide('closer', closer)
+}
+
+let fullscreen = inject<object>('fullscreen', {})
+
+if (props.fullscreen !== undefined) {
+  let dot: object = { $parent: fullscreen, active: false }
+  if (isProxy(props.fullscreen)) {
+    dot = props.fullscreen
+  } else if (Array.isArray(props.fullscreen)) {
+    dot = reactive(Object.assign(dot, ...props.fullscreen))
+  } else {
+    dot = reactive({ ...dot, ...props.fullscreen })
+  }
+  fullscreen = dot
+  provide('fullscreen', fullscreen)
+}
 
 const vars = inject<{ __notification?: { id: string; name: string; payload: any } }>('vars')
 const plaid = inject('plaid')
-
-const parentCloser: object | undefined = inject('closer')
-let closer: object | undefined
 
 interface Closer {
   show: boolean
 }
 
-if (typeof props.closer === 'object') {
-  let initCloser = Object.assign(
-    {
-      parent: parentCloser,
-      show: false,
-      fullscreen: false
-    },
-    ...[props.closer]
-  )
-
-  closer = reactive({ ...initCloser })
-} else {
-  closer = parentCloser
-}
-
-provide('closer', closer)
-
 if (Array.isArray(props.setup)) {
-  const setupFn = new Function('vars', 'locals', 'form', 'plaid', 'closer', props.setup[0])
-  setupFn(vars, locals, form, plaid, closer)
+  const setupFn = new Function(
+    'vars',
+    'locals',
+    'form',
+    'plaid',
+    'closer',
+    'fullscreen',
+    props.setup[0]
+  )
+  setupFn(vars, locals, form, plaid, closer, fullscreen)
 }
 
 function addObservers() {
@@ -102,9 +139,10 @@ function addObservers() {
               'form',
               'plaid',
               'closer',
+              'fullscreen',
               observer.script
             )
-            scriptFunc(observer.name, payload, vars, locals, form, plaid, closer)
+            scriptFunc(observer.name, payload, vars, locals, form, plaid, closer, fullscreen)
           } catch (error) {
             console.error('Error executing observer script:', error)
           }
@@ -113,6 +151,7 @@ function addObservers() {
     }
   )
 }
+
 onMounted(() => {
   setTimeout(() => {
     if (props.useDebounce) {
@@ -120,7 +159,6 @@ onMounted(() => {
       const _watch = debounce((obj: any) => {
         emit('change-debounced', obj)
       }, debounceWait)
-      console.log('watched')
       watch(locals, (value, oldValue) => {
         _watch({
           locals: value,
@@ -129,14 +167,14 @@ onMounted(() => {
           oldForm: form
         })
       })
-      watch(form, (value, oldValue) => {
+      /*watch(form, (value, oldValue) => {
         _watch({
           locals: locals,
           form: value,
           oldLocals: locals,
           oldForm: oldValue
         })
-      })
+      })*/
     }
   }, 0)
 

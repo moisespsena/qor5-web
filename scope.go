@@ -15,74 +15,76 @@ type ScopeBuilder struct {
 	TagBuilder[*ScopeBuilder]
 	observers []Observer
 	slots     map[string]any
-	initVal   map[string]any
+	initVal   map[string][]string
+	name      string
 }
 
 func Scope(children ...h.HTMLComponent) *ScopeBuilder {
 	return NewTag(&ScopeBuilder{}, "go-plaid-scope", children...)
 }
 
-func (b *ScopeBuilder) VSlot(v string) *ScopeBuilder {
-	return b.AppendSlot(v)
-}
-
 func (b *ScopeBuilder) Locals() *ScopeBuilder {
-	return b.AppendSlot("locals")
+	return b.Slot("locals")
 }
 
 func (b *ScopeBuilder) Form() *ScopeBuilder {
-	return b.AppendSlot("form")
+	return b.Slot("form")
 }
 
 func (b *ScopeBuilder) Vars() *ScopeBuilder {
-	return b.AppendSlot("vars")
+	return b.Slot("vars")
 }
 
-func (b *ScopeBuilder) Closes() *ScopeBuilder {
-	return b.AppendSlot("closer")
+func (b *ScopeBuilder) Closer() *ScopeBuilder {
+	return b.Slot("closer")
 }
 
-func (b *ScopeBuilder) AppendVSlot(v string) *ScopeBuilder {
-	return b.Attr("v-slot", v)
+func (b *ScopeBuilder) Fullscreen() *ScopeBuilder {
+	return b.Slot("fullscreen")
 }
 
 func (b *ScopeBuilder) init(attr string, vs ...interface{}) (r *ScopeBuilder) {
-	if len(vs) == 0 {
-		return
+	if b.initVal == nil {
+		b.initVal = make(map[string][]string)
 	}
-	js := make([]string, 0)
-	for _, v := range vs {
-		switch vt := v.(type) {
-		case string:
-			js = append(js, vt)
-		default:
-			js = append(js, h.JSONString(v))
+	if len(vs) == 0 {
+		b.initVal[attr] = append(b.initVal[attr], "{}")
+	} else {
+		for _, v := range vs {
+			switch vt := v.(type) {
+			case string:
+				b.initVal[attr] = append(b.initVal[attr], vt)
+			default:
+				b.initVal[attr] = append(b.initVal[attr], h.JSONString(v))
+			}
 		}
 	}
-	initVal := js[0]
-	if len(js) > 1 {
-		initVal = "[" + strings.Join(js, ", ") + "]"
-	}
-	return b.Attr(attr, initVal)
+	return b
 }
 
-func (b *ScopeBuilder) Init(vs ...interface{}) (r *ScopeBuilder) {
-	return b.init(":init", vs...)
+func (b *ScopeBuilder) LocalsInit(vs ...interface{}) (r *ScopeBuilder) {
+	return b.init(":locals", vs...).Locals()
 }
 
 func (b *ScopeBuilder) FormInit(vs ...interface{}) (r *ScopeBuilder) {
-	return b.init(":form-init", vs...)
+	return b.init(":form", vs...).Form()
+}
+
+func (b *ScopeBuilder) CloserInit(vs ...interface{}) (r *ScopeBuilder) {
+	return b.init(":closer", vs...).Closer()
+}
+
+func (b *ScopeBuilder) FullscreenInit(vs ...interface{}) (r *ScopeBuilder) {
+	return b.init(":fullscreen", vs...).Fullscreen()
 }
 
 func (b *ScopeBuilder) Setup(callback string) (r *ScopeBuilder) {
 	return b.init(":setup", []any{callback})
 }
 
-func (b *ScopeBuilder) Closer(vs ...interface{}) (r *ScopeBuilder) {
-	if len(vs) == 0 {
-		vs = append(vs, "{}")
-	}
-	return b.init(":closer", vs...)
+func (b *ScopeBuilder) Name(name string) (r *ScopeBuilder) {
+	b.name = name
+	return b
 }
 
 func (b *ScopeBuilder) OnChange(v string) (r *ScopeBuilder) {
@@ -97,7 +99,7 @@ func (b *ScopeBuilder) UseDebounce(v int) (r *ScopeBuilder) {
 func (b *ScopeBuilder) AppendInit(v string) (r *ScopeBuilder) {
 	t := b.GetAttr(":init")
 	if t == nil {
-		return b.Init(v)
+		return b.LocalsInit(v)
 	}
 	t.Override(func(old any) any {
 		s := old.(string)
@@ -110,7 +112,7 @@ func (b *ScopeBuilder) AppendInit(v string) (r *ScopeBuilder) {
 	return b
 }
 
-func (b *ScopeBuilder) AppendSlot(v ...string) (r *ScopeBuilder) {
+func (b *ScopeBuilder) Slot(v ...string) (r *ScopeBuilder) {
 	if b.slots == nil {
 		b.slots = make(map[string]any)
 	}
@@ -131,13 +133,29 @@ func (b *ScopeBuilder) MarshalHTML(ctx context.Context) (r []byte, err error) {
 		b.Attr(":observers", h.JSONString(b.observers))
 	}
 	if len(b.slots) > 0 {
-		var slots []string
+		var names []string
 		for k := range b.slots {
-			slots = append(slots, k)
+			names = append(names, k)
 		}
-		sort.Strings(slots)
-		b.Attr("v-slot", "{ "+strings.Join(slots, ", ")+" }")
+		sort.Strings(names)
+		b.Attr("v-slot", "{ "+strings.Join(names, ", ")+" }")
 	}
+	if len(b.initVal) > 0 {
+		var names []string
+		for k := range b.initVal {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			v := "[" + strings.Join(b.initVal[name], ", ") + "]"
+			b.Attr(name, v)
+		}
+	}
+	if b.name == "" {
+		b.name = xid.New().String()
+	}
+	b.Attr("scope-name", b.name)
 	return b.TagBuilder.MarshalHTML(ctx)
 }
 
@@ -157,10 +175,14 @@ func (b *ScopeBuilder) Observers(vs ...Observer) (r *ScopeBuilder) {
 }
 
 func CloserScope(comp h.HTMLComponent, show ...bool) (r *ScopeBuilder) {
-	r = Scope(
-		comp,
-	).VSlot("{closer}").
-		Closer()
+	if r, _ = comp.(*ScopeBuilder); r == nil {
+		r = Scope(
+			comp,
+		)
+	}
+
+	r.Closer().
+		CloserInit()
 
 	for _, s := range show {
 		if s {

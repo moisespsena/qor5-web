@@ -1,5 +1,12 @@
-import type {EventFuncID, EventResponse, Location, Queries, QueryValue} from './types'
-import {buildPushState, objectToFormData} from '@/utils'
+import type {
+  EventFuncID,
+  EventResponse,
+  Location,
+  PortalUpdate,
+  Queries,
+  QueryValue
+} from './types'
+import { buildPushState, objectToFormData } from '@/utils'
 
 declare let window: any
 
@@ -10,6 +17,7 @@ export class Builder {
   _vars?: any
   _locals?: any
   _closer?: any
+  _scope?: any = {}
   _loadPortalBody: boolean = false
   _form?: any = {}
   _popstate?: boolean
@@ -17,6 +25,7 @@ export class Builder {
   _location?: Location
   _updateRootTemplate?: any
   _buildPushStateResult?: any
+  _parents?: any
 
   readonly ignoreErrors = [
     'Failed to fetch', // Chrome
@@ -34,11 +43,12 @@ export class Builder {
 
   runScript = (r: EventResponse) => {
     if (r.runScript) {
-      new Function('vars', 'locals', 'form', 'closer', 'plaid', r.runScript).apply(this, [
+      new Function('vars', 'locals', 'form', 'closer', 'scope', 'plaid', r.runScript).apply(this, [
         this._vars,
         this._locals,
         this._form,
         this._closer,
+        this._scope,
         (): Builder => {
           return plaid()
             .vars(this._vars)
@@ -94,7 +104,6 @@ export class Builder {
   }
 
   public locals(v: any): Builder {
-    // console.log("locals", v)
     this._locals = v
     return this
   }
@@ -168,6 +177,11 @@ export class Builder {
     return this
   }
 
+  public scope(v: any): Builder {
+    this._scope = v
+    return this
+  }
+
   public fieldValue(name: string, v: any): Builder {
     if (!this._form) {
       throw new Error('form not exist')
@@ -189,6 +203,12 @@ export class Builder {
 
   public method(m: string): Builder {
     this._method = m
+    return this
+  }
+
+  public parent(index: string, value: any): Builder {
+    this._parents = this._parents || {}
+    this._parents[index] = value
     return this
   }
 
@@ -249,7 +269,7 @@ export class Builder {
 
     try {
       const r = await fetch(fetchURL, fetchOpts).catch((error) => {
-        console.log(error)
+        console.error(error)
         Promise.reject(error)
         if (!this.isIgnoreError(error)) {
           alert('Fetch Unknown Error: ' + error)
@@ -286,6 +306,12 @@ export class Builder {
   }
 
   public go(): Promise<EventResponse> {
+    return this.goPre((b: Builder) => null)
+  }
+
+  public goPre(pre: (b: Builder) => void): Promise<EventResponse> {
+    pre(this)
+
     this.runPushState()
 
     return this.fetch()
@@ -315,6 +341,21 @@ export class Builder {
               if (updatePortalTemplate) {
                 updatePortalTemplate(pu.body)
               }
+            } else if (pu.defer) {
+              setTimeout(
+                (pu: PortalUpdate) => {
+                  if (window.__goplaid.portals[pu.name]) {
+                    const { updatePortalTemplate } = window.__goplaid.portals[pu.name]
+                    if (updatePortalTemplate) {
+                      updatePortalTemplate(pu.body)
+                    }
+                  } else {
+                    console.error("go-plaid-portal defered '" + pu.name + "' does not exists.")
+                  }
+                },
+                10,
+                pu
+              )
             } else {
               console.error("go-plaid-portal '" + pu.name + "' does not exists.")
             }
@@ -356,12 +397,21 @@ export class Builder {
 
     const defaultURL = window.location.href
 
+    let url = this._url
+
+    if (url && this._parents) {
+      const keys = Object.keys(this._parents)
+      keys.forEach((k: any) => {
+        url = (url as string).replace('{parent_' + k + '_id}', this._parents[k].toString())
+      })
+    }
+
     this._buildPushStateResult = buildPushState(
       {
         ...this._eventFuncID,
         ...{ location: this._location }
       },
-      this._url || defaultURL
+      url || defaultURL
     )
   }
 }

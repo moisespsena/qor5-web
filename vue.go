@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
+	"github.com/qor5/web/v3/vue"
 	h "github.com/theplant/htmlgo"
 )
 
@@ -37,13 +39,9 @@ func (j JsCall) MarshalJSON() ([]byte, error) {
 	return json.Marshal([]any{j.Method, j.Raw, j.Args})
 }
 
-type Var string
+type Var = vue.Var
 
-type RawVar string
-
-func (v RawVar) MarshalJSON() ([]byte, error) {
-	return []byte(v), nil
-}
+type RawVar = vue.RawVar
 
 type VueEventTagBuilder struct {
 	beforeScript string
@@ -75,11 +73,23 @@ func POST() (r *VueEventTagBuilder) {
 	return Plaid().Method("POST")
 }
 
+func (b VueEventTagBuilder) Clone() *VueEventTagBuilder {
+	return &b
+}
+
 // URL is request page url without push state
 func (b *VueEventTagBuilder) URL(url interface{}) (r *VueEventTagBuilder) {
 	b.Calls = append(b.Calls, JsCall{
 		Method: "url",
 		Args:   []interface{}{url},
+	})
+	return b
+}
+
+func (b *VueEventTagBuilder) Parent(index int, v interface{}) (r *VueEventTagBuilder) {
+	b.Calls = append(b.Calls, JsCall{
+		Method: "parent",
+		Args:   []interface{}{index, v},
 	})
 	return b
 }
@@ -118,6 +128,14 @@ func (b *VueEventTagBuilder) Vars(v interface{}) (r *VueEventTagBuilder) {
 func (b *VueEventTagBuilder) Locals(v interface{}) (r *VueEventTagBuilder) {
 	b.Calls = append(b.Calls, JsCall{
 		Method: "locals",
+		Args:   []interface{}{v},
+	})
+	return b
+}
+
+func (b *VueEventTagBuilder) Scope(v interface{}) (r *VueEventTagBuilder) {
+	b.Calls = append(b.Calls, JsCall{
+		Method: "scope",
 		Args:   []interface{}{v},
 	})
 	return b
@@ -241,6 +259,14 @@ func (b *VueEventTagBuilder) PopState(v interface{}) (r *VueEventTagBuilder) {
 	return b
 }
 
+func (b *VueEventTagBuilder) Run(script string) (r *VueEventTagBuilder) {
+	b.Calls = append(b.Calls, JsCall{
+		Method: "run",
+		Args:   []interface{}{script},
+	})
+	return b
+}
+
 func (b *VueEventTagBuilder) Raw(script string) (r *VueEventTagBuilder) {
 	b.Calls = append(b.Calls, JsCall{
 		Raw: script,
@@ -251,6 +277,13 @@ func (b *VueEventTagBuilder) Raw(script string) (r *VueEventTagBuilder) {
 func (b *VueEventTagBuilder) Go() (r string) {
 	b.Raw("go()")
 	return b.String()
+}
+
+func (b *VueEventTagBuilder) JSON() (r *VueEventTagBuilder) {
+	b.Calls = append(b.Calls, JsCall{
+		Method: "json",
+	})
+	return b
 }
 
 func (b *VueEventTagBuilder) RunPushState() (r string) {
@@ -352,9 +385,9 @@ func (v *VueEventTagBuilderSlice) Decode(s string) {
 }
 
 func toJsValue(v interface{}) string {
-	switch v.(type) {
+	switch t := v.(type) {
 	case Var:
-		return fmt.Sprint(v)
+		return string(t)
 	default:
 		return h.JSONString(v)
 	}
@@ -365,9 +398,38 @@ func (b *VueEventTagBuilder) MarshalJSON() ([]byte, error) {
 }
 
 func VAssign(varName string, v interface{}) []interface{} {
-	varVal, ok := v.(string)
-	if !ok {
-		varVal = h.JSONString(v)
+	var varVal string
+	switch t := v.(type) {
+	case string:
+		varVal = t
+	case []byte:
+		varVal = string(t)
+	case map[string]interface{}:
+		l := len(t)
+		if l == 0 {
+			varVal = "{}"
+		} else {
+			var b strings.Builder
+			b.WriteString("{")
+			for k, v := range t {
+				b.WriteString(strconv.Quote(k))
+				b.WriteString(": ")
+
+				switch t := v.(type) {
+				case Var:
+					b.WriteString(string(t))
+				case []byte:
+					b.WriteString(string(t))
+				default:
+					b.WriteString(h.JSONString(t))
+				}
+				b.WriteString(",")
+			}
+			varVal = b.String()
+			varVal = varVal[:len(varVal)-1] + "}"
+		}
+	default:
+		varVal = h.JSONString(t)
 	}
 	return []interface{}{
 		"v-assign",
